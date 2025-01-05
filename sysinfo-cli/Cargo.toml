@@ -1,0 +1,13 @@
+[package]
+name = "sysinfo-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "sysinfo"
+path = "src/main.rs"
+
+[dependencies]
+sysinfo = "0.29.10"
+clap = { version = "4.4.6", features = ["derive"] }
+colored = "2.0.4"
