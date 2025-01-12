@@ -45,12 +45,18 @@ fn show_notification(title: &str, message: &str, urgency: &str) {
         _ => notify_rust::Urgency::Normal,
     };
 
-    if let Err(e) = Notification::new()
+    match Notification::new()
         .summary(title)
         .body(message)
         .urgency(urgency_level)
         .show() {
-        println!("Failed to show notification: {}", e);
+        Ok(_) => (),
+        Err(e) => {
+            // Fallback to console output if notification fails
+            eprintln!("Notification failed ({}). Fallback to console:", e);
+            println!("=== {} ===", title);
+            println!("{}", message);
+        }
     }
 }
 
@@ -64,19 +70,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Raw system info: {:?}", sys_info);
 
     if let Some(sys_info) = sys_info {
-        println!("System Information:");
-        println!("CPU Temperature: {}°C", 
-            sys_info.cpu_temp.map_or("N/A".to_string(), |t| format!("{:.1}", t)));
-        println!("Battery: {}% ({})", 
-            sys_info.battery_percentage.map_or("N/A".to_string(), |b| format!("{:.1}", b)),
-            sys_info.battery_status.unwrap_or("Unknown".to_string()));
+        if sys_info.validate() {
+            println!("System Information:");
+            println!("CPU Temperature: {}°C", 
+                sys_info.cpu_temp.map_or("N/A".to_string(), |t| format!("{:.1}", t)));
+            println!("Battery: {}% ({})", 
+                sys_info.battery_percentage.map_or("N/A".to_string(), |b| format!("{:.1}", b)),
+                sys_info.battery_status.unwrap_or("Unknown".to_string()));
+        } else {
+            println!("Warning: Initial system information validation failed");
+        }
     }
 
     // Start the monitoring loop
     loop {
-         println!("checking battery");
+        println!("checking battery");
         
         if let Some(sys_info) = SystemInfo::get() {
+            if !sys_info.validate() {
+                println!("Warning: Invalid system information received, skipping this iteration");
+                thread::sleep(Duration::from_secs(60)); // Wait for 1 minute before retrying
+                continue;
+            }
+
             if let Some(battery) = sys_info.battery_percentage {
                 println!("Current battery level: {}%", battery);
                 if battery < 20.0 {
@@ -87,6 +103,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     show_notification("Tuya discharging", "discharging", "normal");
                 }
             }
+        } else {
+            println!("Warning: Failed to get system information");
+            thread::sleep(Duration::from_secs(60)); // Wait for 1 minute before retrying
         }
 
         // Sleep for 5 minutes
