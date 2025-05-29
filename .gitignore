@@ -1,5 +1,6 @@
 tuya-monitor
 tuya-monitor.service
+tuya-monitor-go
 # Dependencies
 node_modules/
 .pnpm-store/

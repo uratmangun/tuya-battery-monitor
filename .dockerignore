@@ -1,0 +1,18 @@
+# Ignore Git directory
+.git
+.gitignore
+
+# Ignore build artifacts
+target/
+Cargo.lock # Usually committed, but can be ignored if you always want a fresh solve in Docker
+
+# Ignore IDE/editor specific files
+.vscode/
+.idea/
+
+# Ignore .env file if you plan to pass environment variables differently
+# .env
+
+# Ignore Dockerfile and .dockerignore themselves
+Dockerfile
+.dockerignore

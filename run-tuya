@@ -1,0 +1,5 @@
+docker run -d \
+  --name tuya-monitor-instance \
+  --network host \
+  --env-file /home/uratmangun/CascadeProjects/tuya/.env \
+  tuya-monitor-app

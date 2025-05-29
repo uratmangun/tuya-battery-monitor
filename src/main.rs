@@ -3,12 +3,14 @@ use std::time::Duration;
 use dotenv::dotenv;
 use reqwest::Client;
 use serde_json::json;
-use notify_rust::Notification;
 use std::thread;
 
 // Import the system_info module that contains getSystemInfo implementation
 mod system_info;
 use system_info::SystemInfo;
+use std::process::Command;
+use tokio::time::sleep;
+
 
 // Function to control the switch (equivalent to turnOffSwitch4)
 async fn control_switch(turn_on: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -38,26 +40,33 @@ async fn control_switch(turn_on: bool) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-// Function to show notifications
-fn show_notification(title: &str, message: &str, urgency: &str) {
-    let urgency_level = match urgency {
-        "critical" => notify_rust::Urgency::Critical,
-        _ => notify_rust::Urgency::Normal,
-    };
 
-    match Notification::new()
-        .summary(title)
-        .body(message)
-        .urgency(urgency_level)
-        .show() {
-        Ok(_) => (),
-        Err(e) => {
-            // Fallback to console output if notification fails
-            eprintln!("Notification failed ({}). Fallback to console:", e);
-            println!("=== {} ===", title);
-            println!("{}", message);
+async fn get_adb_battery_level() -> Result<f32, Box<dyn std::error::Error>> {
+    let output = Command::new("adb")
+        .args(&["shell", "dumpsys", "battery"])
+        .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("ADB command error: {}\nEnsure ADB is installed, the device is connected, developer options & USB debugging are enabled, and the PC is authorized.", stderr);
+        return Err(format!("adb command failed. Is the device connected and authorized? Details: {}", stderr).into());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let trimmed_line = line.trim();
+        if trimmed_line.starts_with("level:") {
+            // Example line: "  level: 85"
+            let parts: Vec<&str> = trimmed_line.split(':').collect();
+            if parts.len() == 2 {
+                if let Ok(level) = parts[1].trim().parse::<f32>() {
+                    return Ok(level);
+                }
+            }
         }
     }
+    eprintln!("Failed to parse battery level from ADB output. Full output:\n{}", stdout);
+    Err("Could not parse battery level from adb output. Check ADB connection and device state.".into())
 }
 
 #[tokio::main]
@@ -93,14 +102,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
 
-            if let Some(battery) = sys_info.battery_percentage {
-                println!("Current battery level: {}%", battery);
-                if battery < 20.0 {
-                    control_switch(true).await?;
-                    show_notification("Tuya charging", "charge", "normal");
-                } else if battery > 79.0 {
-                    control_switch(false).await?;
-                    show_notification("Tuya discharging", "discharging", "normal");
+            match get_adb_battery_level().await {
+                Ok(battery_level) => {
+                    println!("Current ADB battery level: {}%", battery_level);
+                    if battery_level < 20.0 {
+                        println!("Battery level is below 20% ({}), attempting to turn on charger.", battery_level);
+                        if let Err(e) = control_switch(true).await {
+                            eprintln!("Failed to turn on switch: {}", e);
+                            eprintln!("Switch Error: Failed to turn ON charger: {}", e);
+                        } else {
+                            println!("Tuya Charging: Battery at {}%, charger ON.", battery_level);
+                        }
+                    } else if battery_level > 80.0 {
+                        println!("Battery level is above 80% ({}), attempting to turn off charger.", battery_level);
+                        if let Err(e) = control_switch(false).await {
+                            eprintln!("Failed to turn off switch: {}", e);
+                            eprintln!("Switch Error: Failed to turn OFF charger: {}", e);
+                        } else {
+                            println!("Tuya Discharging: Battery at {}%, charger OFF.", battery_level);
+                        }
+                    } else {
+                        println!("Battery level is {}% (between 20% and 80%). No action needed.", battery_level);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to get ADB battery level: {}. Check ADB setup and device connection/authorization.", e);
+                    eprintln!("ADB Error: Failed to get battery level. Error: {}", e);
                 }
             }
         } else {
@@ -109,6 +136,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Sleep for 5 minutes
-        thread::sleep(Duration::from_secs(300));
+        sleep(Duration::from_secs(300)).await;
     }
 } 
