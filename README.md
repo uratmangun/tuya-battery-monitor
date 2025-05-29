@@ -1,6 +1,6 @@
 # Tuya Battery Monitor
 
-A Rust application that monitors an Android device's battery level (via ADB) and automatically controls a smart plug through Home Assistant to manage charging. When the battery level drops below a configured threshold (e.g., 20%), it turns on the smart plug to start charging, and when it reaches another threshold (e.g., 80%), it turns off the plug to prevent overcharging.
+A go application that monitors an Android device's battery level (via ADB) and automatically controls a smart plug through Home Assistant to manage charging. When the battery level drops below a configured threshold (e.g., 20%), it turns on the smart plug to start charging, and when it reaches another threshold (e.g., 80%), it turns off the plug to prevent overcharging.
 
 This project uses a [Bardi Smart Power Strip](https://bardi.co.id/product/extension-power-strip/) as the smart plug, but you can use any smart plug that's compatible with Home Assistant and Tuya.
 
