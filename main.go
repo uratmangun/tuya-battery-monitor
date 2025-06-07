@@ -92,31 +92,64 @@ func controlSwitch(cfg *Config, turnOn bool) error {
 	return nil
 }
 
-// getADBBatteryLevel retrieves the battery level from an ADB-connected device
+// getADBBatteryLevel retrieves the battery level from a specific ADB-connected device by model
 func getADBBatteryLevel() (float32, error) {
-	cmd := exec.Command("adb", "shell", adbBatteryLevelCmd)
-	output, err := cmd.CombinedOutput() // CombinedOutput includes both stdout and stderr
+	targetModel := "2201117TY"
+	var deviceSerial string
 
+	// 1. List devices and find the target model's serial ID
+	cmdDevices := exec.Command("adb", "devices", "-l")
+	outputDevices, err := cmdDevices.CombinedOutput()
 	if err != nil {
-		return 0, fmt.Errorf("adb command failed: %w. Output: %s\nEnsure ADB is installed, the device is connected, developer options & USB debugging are enabled, and the PC is authorized.", err, string(output))
+		return 0, fmt.Errorf("adb devices -l command failed: %w. Output: %s", err, string(outputDevices))
 	}
 
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
+	linesDevices := strings.Split(string(outputDevices), "\n")
+	foundDevice := false
+	for _, line := range linesDevices {
+		if strings.Contains(line, "model:"+targetModel) {
+			fields := strings.Fields(line)
+			if len(fields) > 0 {
+				deviceSerial = fields[0]
+				foundDevice = true
+				log.Printf("Found device %s with serial %s", targetModel, deviceSerial)
+				break
+			}
+		}
+	}
+
+	if !foundDevice {
+		if strings.Contains(string(outputDevices), "List of devices attached") && len(linesDevices) <= 2 { // Check if output indicates no devices beyond header
+			return 0, fmt.Errorf("no ADB devices found. Output: %s", string(outputDevices))
+		}
+		return 0, fmt.Errorf("device model %s not found. ADB devices output: %s", targetModel, string(outputDevices))
+	}
+
+	// 2. Get battery level for the specific device
+	cmdBattery := exec.Command("adb", "-s", deviceSerial, "shell", adbBatteryLevelCmd) // adbBatteryLevelCmd is "dumpsys battery"
+	outputBattery, err := cmdBattery.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("adb -s %s shell %s command failed: %w. Output: %s", deviceSerial, adbBatteryLevelCmd, err, string(outputBattery))
+	}
+
+	linesBattery := strings.Split(string(outputBattery), "\n")
+	for _, line := range linesBattery {
 		trimmedLine := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmedLine, "level:") {
 			parts := strings.Split(trimmedLine, ":")
 			if len(parts) == 2 {
 				levelStr := strings.TrimSpace(parts[1])
-				level, err := strconv.ParseFloat(levelStr, 32)
-				if err == nil {
+				level, errConv := strconv.ParseFloat(levelStr, 32)
+				if errConv == nil {
 					return float32(level), nil
 				}
+				log.Printf("Failed to parse level string '%s': %v", levelStr, errConv)
 			}
 		}
 	}
-	log.Printf("Failed to parse battery level from ADB output. Full output:\n%s", string(output))
-	return 0, fmt.Errorf("could not parse battery level from adb output. Check ADB connection and device state")
+
+	log.Printf("Failed to parse battery level for device %s from ADB output. Full output:\n%s", deviceSerial, string(outputBattery))
+	return 0, fmt.Errorf("could not parse battery level for device %s. Check ADB connection and device state", deviceSerial)
 }
 
 func main() {
